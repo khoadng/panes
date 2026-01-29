@@ -14,16 +14,18 @@ class CascadeDemo extends StatefulWidget {
 }
 
 class _CascadeDemoState extends State<CascadeDemo> {
-  late PaneController _controller;
+  late PaneController _horizontalController;
+  late PaneController _verticalController;
 
   @override
   void initState() {
     super.initState();
-    _buildController();
+    _buildControllers();
   }
 
-  void _buildController() {
-    _controller = PaneController(
+  void _buildControllers() {
+    // Horizontal: Explorer | Editor1 | Editor2 | Outline
+    _horizontalController = PaneController(
       entries: [
         // File Explorer - eager, will cascade
         PaneEntry(
@@ -55,18 +57,40 @@ class _CascadeDemoState extends State<CascadeDemo> {
         ),
       ],
     );
+
+    // Vertical: Main Area / Terminal
+    _verticalController = PaneController(
+      entries: [
+        // Main content area - fractional, eager
+        PaneEntry(
+          id: 'main',
+          initialSize: PaneSize.fraction(1.0),
+          minSize: PaneSize.pixel(200),
+        ),
+        // Terminal/Output - pixel, eager (can cascade)
+        PaneEntry(
+          id: 'terminal',
+          initialSize: PaneSize.pixel(150),
+          minSize: PaneSize.pixel(80),
+          maxSize: PaneSize.pixel(400),
+          resizeBehavior: ResizeBehavior.eager,
+        ),
+      ],
+    );
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _horizontalController.dispose();
+    _verticalController.dispose();
     super.dispose();
   }
 
   void _reset() {
     setState(() {
-      _controller.dispose();
-      _buildController();
+      _horizontalController.dispose();
+      _verticalController.dispose();
+      _buildControllers();
     });
   }
 
@@ -80,22 +104,36 @@ class _CascadeDemoState extends State<CascadeDemo> {
           _buildTitleBar(),
           // Instructions
           _buildInstructions(),
-          // Size indicators
+          // Size indicators for horizontal panels
           _buildSizeIndicators(),
-          // Main IDE layout
+          // Main IDE layout (vertical split: main area + terminal)
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(4),
               child: MultiPane(
-                controller: _controller,
-                direction: Axis.horizontal,
-                paneBuilder: (context, id) => _buildPane(id),
+                controller: _verticalController,
+                direction: Axis.vertical,
+                paneBuilder: (context, id) => _buildVerticalPane(id),
               ),
             ),
           ),
+          // Size indicator for terminal
+          _buildTerminalSizeIndicator(),
         ],
       ),
     );
+  }
+
+  Widget _buildVerticalPane(String id) {
+    return switch (id) {
+      'main' => MultiPane(
+          controller: _horizontalController,
+          direction: Axis.horizontal,
+          paneBuilder: (context, id) => _buildHorizontalPane(id),
+        ),
+      'terminal' => _buildTerminalPanel(),
+      _ => const SizedBox(),
+    };
   }
 
   Widget _buildTitleBar() {
@@ -185,15 +223,15 @@ class _CascadeDemoState extends State<CascadeDemo> {
 
   Widget _buildSizeIndicators() {
     return ListenableBuilder(
-      listenable: _controller,
+      listenable: _horizontalController,
       builder: (context, _) {
         return Container(
           height: 32,
           color: const Color(0xFF252526),
           child: Row(
             children: [
-              for (final entry in _controller.entries)
-                Expanded(child: _sizeChip(entry)),
+              for (final entry in _horizontalController.entries)
+                Expanded(child: _sizeChip(entry, _horizontalController)),
             ],
           ),
         );
@@ -201,15 +239,35 @@ class _CascadeDemoState extends State<CascadeDemo> {
     );
   }
 
-  Widget _sizeChip(PaneEntry entry) {
-    final size = _controller.getPixelSize(entry.id) ??
-        _controller.getFractionalSize(entry.id);
+  Widget _buildTerminalSizeIndicator() {
+    return ListenableBuilder(
+      listenable: _verticalController,
+      builder: (context, _) {
+        final entry = _verticalController.entries
+            .firstWhere((e) => e.id == 'terminal');
+        return Container(
+          height: 24,
+          color: const Color(0xFF252526),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            children: [
+              Expanded(child: _sizeChip(entry, _verticalController)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sizeChip(PaneEntry entry, PaneController controller) {
+    final size = controller.getPixelSize(entry.id) ??
+        controller.getFractionalSize(entry.id);
     final behavior = entry.effectiveResizeBehavior;
     final color = behavior == ResizeBehavior.fixed ? Colors.red : Colors.green;
 
-    final sizeText = _controller.getPixelSize(entry.id) != null
+    final sizeText = controller.getPixelSize(entry.id) != null
         ? '${size!.toInt()}px'
-        : _controller.getFractionalSize(entry.id) != null
+        : controller.getFractionalSize(entry.id) != null
             ? 'flex: ${size!.toStringAsFixed(2)}'
             : entry.initialSize is PaneSizePixel
                 ? '${entry.initialSize.size.toInt()}px'
@@ -254,11 +312,13 @@ class _CascadeDemoState extends State<CascadeDemo> {
       'editor1' => 'Editor 1',
       'editor2' => 'Editor 2',
       'outline' => 'Outline',
+      'terminal' => 'Terminal',
+      'main' => 'Main',
       _ => id,
     };
   }
 
-  Widget _buildPane(String id) {
+  Widget _buildHorizontalPane(String id) {
     return switch (id) {
       'explorer' => _buildExplorerPanel(),
       'editor1' => _buildEditorPanel(1),
@@ -269,7 +329,8 @@ class _CascadeDemoState extends State<CascadeDemo> {
   }
 
   Widget _buildExplorerPanel() {
-    final entry = _controller.entries.firstWhere((e) => e.id == 'explorer');
+    final entry =
+        _horizontalController.entries.firstWhere((e) => e.id == 'explorer');
     return _panelContainer(
       color: Colors.green,
       header: 'EXPLORER',
@@ -292,7 +353,7 @@ class _CascadeDemoState extends State<CascadeDemo> {
 
   Widget _buildEditorPanel(int index) {
     final id = 'editor$index';
-    final entry = _controller.entries.firstWhere((e) => e.id == id);
+    final entry = _horizontalController.entries.firstWhere((e) => e.id == id);
     return _panelContainer(
       color: Colors.green,
       header: 'EDITOR $index',
@@ -322,10 +383,15 @@ class _CascadeDemoState extends State<CascadeDemo> {
                     ),
                     Expanded(
                       child: Text(
-                        i == 1 ? 'import \'package:flutter/material.dart\';' :
-                        i == 3 ? 'void main() {' :
-                        i == 4 ? '  runApp(const MyApp());' :
-                        i == 5 ? '}' : '',
+                        i == 1
+                            ? 'import \'package:flutter/material.dart\';'
+                            : i == 3
+                                ? 'void main() {'
+                                : i == 4
+                                    ? '  runApp(const MyApp());'
+                                    : i == 5
+                                        ? '}'
+                                        : '',
                         style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
@@ -343,7 +409,8 @@ class _CascadeDemoState extends State<CascadeDemo> {
   }
 
   Widget _buildOutlinePanel() {
-    final entry = _controller.entries.firstWhere((e) => e.id == 'outline');
+    final entry =
+        _horizontalController.entries.firstWhere((e) => e.id == 'outline');
     return _panelContainer(
       color: Colors.red,
       header: 'OUTLINE (FIXED)',
@@ -359,6 +426,61 @@ class _CascadeDemoState extends State<CascadeDemo> {
           _outlineItem('initState()', Icons.functions, 2),
           _outlineItem('build()', Icons.functions, 2),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTerminalPanel() {
+    final entry =
+        _verticalController.entries.firstWhere((e) => e.id == 'terminal');
+    return _panelContainer(
+      color: Colors.green,
+      header: 'TERMINAL',
+      behavior: entry.effectiveResizeBehavior,
+      constraints: 'min: 80 • max: 400',
+      child: Container(
+        color: const Color(0xFF1e1e1e),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '\$ flutter run',
+              style: TextStyle(
+                color: Colors.green[300],
+                fontSize: 12,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Launching lib/main.dart on macOS in debug mode...',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '✓ Built build/macos/Build/Products/Debug/example.app',
+              style: TextStyle(
+                color: Colors.green[300],
+                fontSize: 12,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Syncing files to device macOS...',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -205,12 +205,14 @@ class PaneController extends ChangeNotifier {
         final clampedDelta = clampedFractionalSize - fractionalCurrentSize;
 
         // Resize the adjacent pixel pane with the clamped negative delta
+        // Note: adjacent pane is AFTER the resizer, so cascade direction is flipped
         _resizePixelPane(
           adjacentPaneId,
           adjacentEntry,
           -clampedDelta,
           context,
           resizerIndex: effectiveResizerIndex,
+          isAfterResizer: true,
         );
       } else {
         // Both are fractional
@@ -234,6 +236,7 @@ class PaneController extends ChangeNotifier {
     double delta,
     ResizeContext context, {
     int? resizerIndex,
+    bool isAfterResizer = false,
   }) {
     // Use virtual position if we're in overshoot/undershoot, otherwise actual size
     final currentSize = _maxOvershootPositions[id] ??
@@ -270,6 +273,9 @@ class PaneController extends ChangeNotifier {
           resizerIndex: resizerIndex,
           delta: overflow,
           context: updatedContext,
+          // When pane is AFTER resizer, flip cascade direction
+          // (overflow needs to go to panes BEFORE resizer, not after)
+          flipDirection: isAfterResizer,
         );
       }
 
@@ -443,21 +449,27 @@ class PaneController extends ChangeNotifier {
   ///
   /// [resizerIndex] is the index of the resizer being dragged.
   /// [delta] is positive when increasing size in the forward direction.
+  /// [flipDirection] reverses the cascade direction (used when resizing pane
+  /// after the resizer instead of before).
   double _cascadeResize({
     required int resizerIndex,
     required double delta,
     required ResizeContext context,
+    bool flipDirection = false,
   }) {
     if (delta == 0) return 0;
 
     // Determine direction based on delta sign
     // Positive delta = panes before resizer grow, panes after shrink
     // For cascade: we cascade to panes that need to absorb the opposite effect
-    final forward = delta > 0;
+    //
+    // When flipDirection is true (resizing pane AFTER resizer):
+    // - Positive delta (growing) needs to take space from panes BEFORE resizer
+    // - So we flip: forward becomes !forward
+    var forward = delta > 0;
+    if (flipDirection) forward = !forward;
 
     // The "absorbing" panes are those that shrink to allow growth
-    // When delta > 0: panes after resizer shrink (forward=true means they absorb)
-    // When delta < 0: panes before resizer shrink (forward=false means they absorb)
     final targets = _collectCascadeTargets(
       resizerIndex: resizerIndex,
       forward: forward,
