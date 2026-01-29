@@ -6,7 +6,6 @@ import 'package:panes/src/resize_calculator.dart';
 void main() {
   group('Max overshoot behavior', () {
     late PaneController controller;
-    late ResizeContext context;
 
     setUp(() {
       controller = PaneController(
@@ -22,14 +21,6 @@ void main() {
             initialSize: PaneSize.fraction(1.0),
           ),
         ],
-      );
-
-      context = const ResizeContext(
-        containerSize: 800,
-        resizerThickness: 8,
-        resizerCount: 1,
-        totalFlexSum: 1.0,
-        totalFixedSize: 200,
       );
     });
 
@@ -176,6 +167,125 @@ void main() {
     });
   });
 
+  group('Min undershoot behavior (non-autoHide)', () {
+    late PaneController controller;
+
+    setUp(() {
+      controller = PaneController(
+        entries: [
+          PaneEntry(
+            id: 'left',
+            initialSize: PaneSize.pixel(200),
+            minSize: PaneSize.pixel(100),
+            maxSize: PaneSize.pixel(300),
+            // autoHide: false (default)
+          ),
+          PaneEntry(
+            id: 'right',
+            initialSize: PaneSize.fraction(1.0),
+          ),
+        ],
+      );
+    });
+
+    test('dragging below min clamps display at min', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag from 200 to 50 (below min of 100)
+      controller.resize(
+        paneId: 'left',
+        delta: -150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Display should be clamped at min
+      expect(controller.getVisualPixelSize('left'), 100);
+    });
+
+    test('reversing while still below min does NOT resize', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 50 (below min of 100)
+      controller.resize(
+        paneId: 'left',
+        delta: -150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.getVisualPixelSize('left'), 100);
+
+      // Reverse by 30px: virtual goes from 50 to 80, still < min
+      controller.resize(
+        paneId: 'left',
+        delta: 30,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Should still be at min, not 130
+      expect(controller.getVisualPixelSize('left'), 100);
+    });
+
+    test('reversing back into bounds resizes to actual position', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 50 (below min of 100)
+      controller.resize(
+        paneId: 'left',
+        delta: -150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Reverse by 70px: virtual goes from 50 to 120, now > min
+      controller.resize(
+        paneId: 'left',
+        delta: 70,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Should resize to 120
+      expect(controller.getVisualPixelSize('left'), 120);
+    });
+
+    test('endResize clears undershoot tracking', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 50 (below min)
+      controller.resize(
+        paneId: 'left',
+        delta: -150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.getVisualPixelSize('left'), 100);
+
+      // End resize
+      controller.endResize('left', adjacentPaneId: 'right');
+
+      // Start new resize
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Small grow should resize immediately (no accumulated undershoot)
+      controller.resize(
+        paneId: 'left',
+        delta: 20,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.getVisualPixelSize('left'), 120);
+    });
+  });
+
   group('Max overshoot with autoHide panes', () {
     late PaneController controller;
 
@@ -187,7 +297,7 @@ void main() {
             initialSize: PaneSize.pixel(200),
             minSize: PaneSize.pixel(100),
             maxSize: PaneSize.pixel(300),
-            autoHide: true,  // autoHide enabled like IdeController
+            autoHide: true, // autoHide enabled like IdeController
           ),
           PaneEntry(
             id: 'right',

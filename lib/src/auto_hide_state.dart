@@ -154,31 +154,28 @@ class AutoHideBehavior {
     final maxSize = ResizeCalculator.getMaxPixels(entry, context);
     final threshold = ResizeCalculator.getAutoHideThreshold(entry, context);
 
-    // Handle pending reveal state (hidden pane being dragged to reveal)
-    if (currentState is AutoHidePendingReveal) {
-      return _processPendingReveal(
-        currentState,
-        requestedSize,
-        threshold,
-        minSize,
-        maxSize,
-      );
-    }
-
-    // Handle visible pane being resized
-    if (isVisible) {
-      return _processVisibleResize(
-        currentState,
-        requestedSize,
-        entry,
-        minSize,
-        maxSize,
-        threshold,
-      );
-    }
-
-    // Pane is hidden and not in pending reveal - no resize action
-    return AutoHideResultNoChange(newState: currentState);
+    // Route to appropriate handler based on state
+    return switch (currentState) {
+      // Hidden pane being dragged to reveal
+      AutoHidePendingReveal() => _processPendingReveal(
+          currentState,
+          requestedSize,
+          threshold,
+          minSize,
+          maxSize,
+        ),
+      // Visible pane being resized
+      _ when isVisible => _processVisibleResize(
+          currentState,
+          requestedSize,
+          entry,
+          minSize,
+          maxSize,
+          threshold,
+        ),
+      // Pane is hidden and not in pending reveal - no resize action
+      _ => AutoHideResultNoChange(newState: currentState),
+    };
   }
 
   static AutoHideResult _processPendingReveal(

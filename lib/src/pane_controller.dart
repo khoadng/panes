@@ -16,10 +16,11 @@ class PaneController extends ChangeNotifier {
   /// Auto-hide state per pane (replaces scattered maps).
   final Map<String, AutoHideState> _autoHideStates = {};
 
-  /// Tracks virtual position when dragging past max bounds.
+  /// Tracks virtual position when dragging past bounds.
   /// Used to implement "dead zone" behavior where reversing doesn't resize
   /// until the virtual position comes back within bounds.
   final Map<String, double> _maxOvershootPositions = {};
+  final Map<String, double> _minUndershootPositions = {};
 
   /// Whether a resize drag is currently in progress.
   bool _isResizing = false;
@@ -63,13 +64,10 @@ class PaneController extends ChangeNotifier {
     _visibilityOverrides[id] = true;
 
     // Restore size from auto-hide state if available
-    final state = _autoHideStates[id];
-    if (state is AutoHideHidden && state.restoreSize != null) {
-      _pixelSizes[id] = state.restoreSize!;
-      _autoHideStates[id] = AutoHideVisible(pixelSize: state.restoreSize);
-    } else if (state is AutoHidePendingReveal) {
-      _pixelSizes[id] = state.restoreSize;
-      _autoHideStates[id] = AutoHideVisible(pixelSize: state.restoreSize);
+    if (_autoHideStates[id] case AutoHideHidden(:final restoreSize?) ||
+        AutoHidePendingReveal(:final restoreSize)) {
+      _pixelSizes[id] = restoreSize;
+      _autoHideStates[id] = AutoHideVisible(pixelSize: restoreSize);
     }
 
     notifyListeners();
@@ -129,8 +127,9 @@ class PaneController extends ChangeNotifier {
   }
 
   void _finalizeResizeState(String id) {
-    // Clear max overshoot tracking
+    // Clear bound tracking
     _maxOvershootPositions.remove(id);
+    _minUndershootPositions.remove(id);
 
     // Finalize auto-hide state if present
     final state = _autoHideStates[id];
@@ -201,17 +200,20 @@ class PaneController extends ChangeNotifier {
     double delta,
     ResizeContext context,
   ) {
-    // Use virtual position if we're in max overshoot, otherwise use actual size
+    // Use virtual position if we're in overshoot/undershoot, otherwise actual size
     final currentSize = _maxOvershootPositions[id] ??
+        _minUndershootPositions[id] ??
         _getPixelSizeForCalculation(id) ??
         entry.initialSize.size;
     final requestedSize = currentSize + delta;
 
+    final minSize = ResizeCalculator.getMinPixels(entry, context);
     final maxSize = ResizeCalculator.getMaxPixels(entry, context);
 
-    // Handle max overshoot BEFORE branching to autoHide/constrained paths
+    // Handle max overshoot - track virtual position, clamp display to max
     if (requestedSize > maxSize) {
       _maxOvershootPositions[id] = requestedSize;
+      _minUndershootPositions.remove(id);
       _pixelSizes[id] = maxSize;
       if (entry.autoHide) {
         _autoHideStates[id] = AutoHideVisible(pixelSize: maxSize);
@@ -219,8 +221,18 @@ class PaneController extends ChangeNotifier {
       return;
     }
 
-    // Within max bounds - clear overshoot and proceed
+    // Handle min undershoot for non-auto-hide panes
+    // (auto-hide panes have their own below-min tracking)
+    if (!entry.autoHide && requestedSize < minSize) {
+      _minUndershootPositions[id] = requestedSize;
+      _maxOvershootPositions.remove(id);
+      _pixelSizes[id] = minSize;
+      return;
+    }
+
+    // Within bounds - clear tracking and proceed
     _maxOvershootPositions.remove(id);
+    _minUndershootPositions.remove(id);
 
     if (entry.autoHide) {
       _handleAutoHideResize(id, entry, requestedSize, context);
@@ -379,6 +391,7 @@ class PaneController extends ChangeNotifier {
     _fractionalSizes.remove(id);
     _autoHideStates.remove(id);
     _maxOvershootPositions.remove(id);
+    _minUndershootPositions.remove(id);
     notifyListeners();
   }
 
@@ -388,6 +401,7 @@ class PaneController extends ChangeNotifier {
     _fractionalSizes.clear();
     _autoHideStates.clear();
     _maxOvershootPositions.clear();
+    _minUndershootPositions.clear();
     notifyListeners();
   }
 
