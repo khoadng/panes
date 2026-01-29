@@ -16,6 +16,11 @@ class PaneController extends ChangeNotifier {
   /// Auto-hide state per pane (replaces scattered maps).
   final Map<String, AutoHideState> _autoHideStates = {};
 
+  /// Tracks virtual position when dragging past max bounds.
+  /// Used to implement "dead zone" behavior where reversing doesn't resize
+  /// until the virtual position comes back within bounds.
+  final Map<String, double> _maxOvershootPositions = {};
+
   /// Whether a resize drag is currently in progress.
   bool _isResizing = false;
 
@@ -124,6 +129,10 @@ class PaneController extends ChangeNotifier {
   }
 
   void _finalizeResizeState(String id) {
+    // Clear max overshoot tracking
+    _maxOvershootPositions.remove(id);
+
+    // Finalize auto-hide state if present
     final state = _autoHideStates[id];
     if (state == null) return;
 
@@ -192,21 +201,44 @@ class PaneController extends ChangeNotifier {
     double delta,
     ResizeContext context,
   ) {
-    final currentSize =
-        _getPixelSizeForCalculation(id) ?? entry.initialSize.size;
+    // Use virtual position if we're in max overshoot, otherwise use actual size
+    final currentSize = _maxOvershootPositions[id] ??
+        _getPixelSizeForCalculation(id) ??
+        entry.initialSize.size;
     final requestedSize = currentSize + delta;
+
+    final maxSize = ResizeCalculator.getMaxPixels(entry, context);
+
+    // Handle max overshoot BEFORE branching to autoHide/constrained paths
+    if (requestedSize > maxSize) {
+      _maxOvershootPositions[id] = requestedSize;
+      _pixelSizes[id] = maxSize;
+      if (entry.autoHide) {
+        _autoHideStates[id] = AutoHideVisible(pixelSize: maxSize);
+      }
+      return;
+    }
+
+    // Within max bounds - clear overshoot and proceed
+    _maxOvershootPositions.remove(id);
 
     if (entry.autoHide) {
       _handleAutoHideResize(id, entry, requestedSize, context);
     } else {
-      // Simple constrained resize
-      final newSize = ResizeCalculator.clampPixels(
-        requestedSize,
-        entry,
-        context,
-      );
-      _pixelSizes[id] = newSize;
+      _handleConstrainedResize(id, entry, requestedSize, context);
     }
+  }
+
+  void _handleConstrainedResize(
+    String id,
+    PaneEntry entry,
+    double requestedSize,
+    ResizeContext context,
+  ) {
+    final minSize = ResizeCalculator.getMinPixels(entry, context);
+    final maxSize = ResizeCalculator.getMaxPixels(entry, context);
+    final clampedSize = requestedSize.clamp(minSize, maxSize);
+    _pixelSizes[id] = clampedSize;
   }
 
   void _handleAutoHideResize(
@@ -346,6 +378,7 @@ class PaneController extends ChangeNotifier {
     _pixelSizes.remove(id);
     _fractionalSizes.remove(id);
     _autoHideStates.remove(id);
+    _maxOvershootPositions.remove(id);
     notifyListeners();
   }
 
@@ -354,6 +387,7 @@ class PaneController extends ChangeNotifier {
     _pixelSizes.clear();
     _fractionalSizes.clear();
     _autoHideStates.clear();
+    _maxOvershootPositions.clear();
     notifyListeners();
   }
 

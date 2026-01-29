@@ -4,6 +4,251 @@ import 'package:panes/src/auto_hide_state.dart';
 import 'package:panes/src/resize_calculator.dart';
 
 void main() {
+  group('Max overshoot behavior', () {
+    late PaneController controller;
+    late ResizeContext context;
+
+    setUp(() {
+      controller = PaneController(
+        entries: [
+          PaneEntry(
+            id: 'left',
+            initialSize: PaneSize.pixel(200),
+            minSize: PaneSize.pixel(100),
+            maxSize: PaneSize.pixel(300),
+          ),
+          PaneEntry(
+            id: 'right',
+            initialSize: PaneSize.fraction(1.0),
+          ),
+        ],
+      );
+
+      context = const ResizeContext(
+        containerSize: 800,
+        resizerThickness: 8,
+        resizerCount: 1,
+        totalFlexSum: 1.0,
+        totalFixedSize: 200,
+      );
+    });
+
+    test('dragging past max clamps display at max', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag from 200 to 350 (past max of 300)
+      controller.resize(
+        paneId: 'left',
+        delta: 150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Display should be clamped at max
+      expect(controller.getVisualPixelSize('left'), 300);
+    });
+
+    test('reversing while still past max does NOT resize', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 350 (past max of 300)
+      controller.resize(
+        paneId: 'left',
+        delta: 150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.getVisualPixelSize('left'), 300);
+
+      // Reverse by 30px: virtual goes from 350 to 320, still > max
+      controller.resize(
+        paneId: 'left',
+        delta: -30,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Should still be at max, not 270
+      expect(controller.getVisualPixelSize('left'), 300);
+    });
+
+    test('reversing back into bounds resizes to actual position', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 350 (past max of 300)
+      controller.resize(
+        paneId: 'left',
+        delta: 150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Reverse by 70px: virtual goes from 350 to 280, now < max
+      controller.resize(
+        paneId: 'left',
+        delta: -70,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Should resize to 280
+      expect(controller.getVisualPixelSize('left'), 280);
+    });
+
+    test('continued dragging past max accumulates virtual position', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 350
+      controller.resize(
+        paneId: 'left',
+        delta: 150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Drag another 100 to virtual 450
+      controller.resize(
+        paneId: 'left',
+        delta: 100,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Display still at max
+      expect(controller.getVisualPixelSize('left'), 300);
+
+      // Reverse 100px: virtual 450 -> 350, still > max
+      controller.resize(
+        paneId: 'left',
+        delta: -100,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.getVisualPixelSize('left'), 300);
+
+      // Reverse another 100px: virtual 350 -> 250, now < max
+      controller.resize(
+        paneId: 'left',
+        delta: -100,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.getVisualPixelSize('left'), 250);
+    });
+
+    test('endResize clears overshoot tracking', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 350 (past max)
+      controller.resize(
+        paneId: 'left',
+        delta: 150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.getVisualPixelSize('left'), 300);
+
+      // End resize
+      controller.endResize('left', adjacentPaneId: 'right');
+
+      // Start new resize
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Small reverse should resize immediately (no accumulated overshoot)
+      controller.resize(
+        paneId: 'left',
+        delta: -20,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.getVisualPixelSize('left'), 280);
+    });
+  });
+
+  group('Max overshoot with autoHide panes', () {
+    late PaneController controller;
+
+    setUp(() {
+      controller = PaneController(
+        entries: [
+          PaneEntry(
+            id: 'left',
+            initialSize: PaneSize.pixel(200),
+            minSize: PaneSize.pixel(100),
+            maxSize: PaneSize.pixel(300),
+            autoHide: true,  // autoHide enabled like IdeController
+          ),
+          PaneEntry(
+            id: 'right',
+            initialSize: PaneSize.fraction(1.0),
+          ),
+        ],
+      );
+    });
+
+    test('autoHide pane: reversing while past max does NOT resize', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 350 (past max of 300)
+      controller.resize(
+        paneId: 'left',
+        delta: 150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.getVisualPixelSize('left'), 300);
+
+      // Reverse by 30px: virtual goes from 350 to 320, still > max
+      controller.resize(
+        paneId: 'left',
+        delta: -30,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Should still be at max, not 270
+      expect(controller.getVisualPixelSize('left'), 300);
+    });
+
+    test('autoHide pane: reversing back into bounds resizes', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 350 (past max of 300)
+      controller.resize(
+        paneId: 'left',
+        delta: 150,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Reverse by 70px: virtual goes from 350 to 280, now < max
+      controller.resize(
+        paneId: 'left',
+        delta: -70,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Should resize to 280
+      expect(controller.getVisualPixelSize('left'), 280);
+    });
+  });
+
   group('AutoHide behavior', () {
     late ResizeContext context;
     late PaneEntry entry;
