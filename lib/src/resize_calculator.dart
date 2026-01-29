@@ -243,15 +243,20 @@ class ResizeCalculator {
     double totalFlexSum = 0;
 
     for (final entry in entries) {
-      final pixelSize = getCurrentPixelSize(entry.id);
-      if (pixelSize != null) {
-        totalFixedSize += pixelSize;
-      } else if (entry.initialSize case PaneSizePixel(:final pixels)) {
-        totalFixedSize += pixels;
-      } else {
-        // Flex pane
+      // Check entry type FIRST - fractional panes stay fractional even if
+      // auto-hide state was initialized (which incorrectly stores fraction as pixels)
+      if (entry.initialSize is PaneSizeFraction) {
+        // Flex pane - always use fractional calculation
         final fraction = getCurrentFraction(entry.id);
         totalFlexSum += fraction ?? entry.initialSize.size;
+      } else {
+        // Pixel pane - check for size override
+        final pixelSize = getCurrentPixelSize(entry.id);
+        if (pixelSize != null) {
+          totalFixedSize += pixelSize;
+        } else {
+          totalFixedSize += (entry.initialSize as PaneSizePixel).pixels;
+        }
       }
     }
 

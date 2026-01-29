@@ -167,14 +167,16 @@ class _IdeExampleState extends State<IdeExample> {
       leftSize: PaneSize.pixel(250),
       leftMinSize: PaneSize.pixel(150),
       leftMaxSize: PaneSize.pixel(500),
+      leftResizeBehavior: ResizeBehavior.eager,
       rightSize: PaneSize.pixel(300),
       rightMinSize: PaneSize.pixel(150),
       rightMaxSize: PaneSize.pixel(500),
+      rightResizeBehavior: ResizeBehavior.eager,
       bottomSize: PaneSize.fraction(0.5),
       bottomMinSize: PaneSize.pixel(50),
-      bottomMaxSize: PaneSize.pixel(480),
       bottomAutoHide: true,
       bottomAutoHideThreshold: PaneSize.fraction(0.5),
+      bottomResizeBehavior: ResizeBehavior.eager,
     );
     // Show panels by default
     _ideController.rootController.show(IdePane.right.id);

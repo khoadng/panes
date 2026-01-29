@@ -402,6 +402,10 @@ class PaneController extends ChangeNotifier {
   /// 1. Eager panes first (absorb delta first)
   /// 2. Reluctant panes last (absorb delta after eager exhausted)
   /// 3. Fixed panes are excluded entirely
+  ///
+  /// IMPORTANT: Collection stops when encountering a fractional pane.
+  /// Fractional panes naturally handle redistribution through the flex layout,
+  /// so we don't cascade "through" them to reach panes on the other side.
   List<PaneEntry> _collectCascadeTargets({
     required int resizerIndex,
     required bool forward,
@@ -412,6 +416,11 @@ class PaneController extends ChangeNotifier {
       // Collect panes from resizer+1 to end
       for (int i = resizerIndex + 1; i < _entries.length; i++) {
         final entry = _entries[i];
+        // Stop at fractional panes - they handle redistribution naturally
+        final isPixelPane =
+            _pixelSizes[entry.id] != null || entry.initialSize is PaneSizePixel;
+        if (!isPixelPane) break;
+
         if (entry.effectiveResizeBehavior != ResizeBehavior.fixed) {
           targets.add(entry);
         }
@@ -420,6 +429,11 @@ class PaneController extends ChangeNotifier {
       // Collect panes from resizer down to 0 (in reverse order)
       for (int i = resizerIndex; i >= 0; i--) {
         final entry = _entries[i];
+        // Stop at fractional panes - they handle redistribution naturally
+        final isPixelPane =
+            _pixelSizes[entry.id] != null || entry.initialSize is PaneSizePixel;
+        if (!isPixelPane) break;
+
         if (entry.effectiveResizeBehavior != ResizeBehavior.fixed) {
           targets.add(entry);
         }
