@@ -261,7 +261,9 @@ class PaneController extends ChangeNotifier {
       }
 
       // Try to cascade the overflow to other panes with UPDATED context
-      if (resizerIndex != null) {
+      // NOTE: Fixed panes do NOT cascade - they just stop at their constraints
+      if (resizerIndex != null &&
+          entry.effectiveResizeBehavior != ResizeBehavior.fixed) {
         final updatedContext = ResizeCalculator.buildContext(
           entries: _entries,
           containerSize: context.containerSize,
