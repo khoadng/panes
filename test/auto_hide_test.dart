@@ -528,4 +528,156 @@ void main() {
       expect(result, isA<AutoHideResultNoChange>());
     });
   });
+
+  group('Auto-hide and reveal drift test', () {
+    late PaneController controller;
+
+    setUp(() {
+      controller = PaneController(
+        entries: [
+          PaneEntry(
+            id: 'left',
+            initialSize: PaneSize.pixel(200),
+            minSize: PaneSize.pixel(100),
+            maxSize: PaneSize.pixel(300),
+            autoHide: true,
+            // threshold defaults to 50% of minSize = 50px
+          ),
+          PaneEntry(
+            id: 'right',
+            initialSize: PaneSize.fraction(1.0),
+          ),
+        ],
+      );
+    });
+
+    test('hide then reveal maintains correct size (no drift)', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Simulate continuous drag: start at 200px
+      // Drag left by -160px (to virtual 40px, below threshold of 50px)
+      controller.resize(
+        paneId: 'left',
+        delta: -160,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Panel should be hidden (40 < 50 threshold)
+      expect(controller.isVisible('left'), false);
+
+      // Reverse drag by +60px (to virtual 100px, reverseDelta = 60 >= threshold)
+      controller.resize(
+        paneId: 'left',
+        delta: 60,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Panel should be revealed at minSize (100px)
+      expect(controller.isVisible('left'), true);
+      expect(controller.getVisualPixelSize('left'), 100);
+    });
+
+    test('multiple hide/reveal cycles maintain alignment', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // First hide: drag -160px (to 40, below threshold)
+      controller.resize(
+        paneId: 'left',
+        delta: -160,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.isVisible('left'), false);
+
+      // First reveal: drag +60px (to 100, reverseDelta = 60 > threshold)
+      controller.resize(
+        paneId: 'left',
+        delta: 60,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.isVisible('left'), true);
+      expect(controller.getVisualPixelSize('left'), 100);
+
+      // Second hide: drag -60px (to 40, below threshold again)
+      controller.resize(
+        paneId: 'left',
+        delta: -60,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.isVisible('left'), false);
+
+      // Second reveal: drag +80px (to 120)
+      controller.resize(
+        paneId: 'left',
+        delta: 80,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.isVisible('left'), true);
+      expect(controller.getVisualPixelSize('left'), 120);
+    });
+
+    test('reveal at clamped minSize tracks undershoot to prevent drift', () {
+      controller.beginResize('left', adjacentPaneId: 'right');
+
+      // Drag to 30px (below threshold of 50px), panel hides
+      controller.resize(
+        paneId: 'left',
+        delta: -170,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+      expect(controller.isVisible('left'), false);
+
+      // Reverse by exactly threshold (50px) to position 80px
+      // But minSize is 100px, so reveal will be CLAMPED
+      controller.resize(
+        paneId: 'left',
+        delta: 50,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Panel reveals at minSize (100px), not at mouse position (80px)
+      expect(controller.isVisible('left'), true);
+      expect(controller.getVisualPixelSize('left'), 100);
+
+      // Now drag +20px more - this should NOT resize yet
+      // because we're still in undershoot (mouse at 100, visual at 100)
+      controller.resize(
+        paneId: 'left',
+        delta: 20,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Visual should still be at 100 (catching up from undershoot)
+      expect(controller.getVisualPixelSize('left'), 100);
+
+      // Drag +20px more - now we should start resizing (mouse at 120)
+      controller.resize(
+        paneId: 'left',
+        delta: 20,
+        containerSize: 800,
+        resizerThickness: 8,
+        adjacentPaneId: 'right',
+      );
+
+      // Now visual should be 120 (past the undershoot catch-up)
+      expect(controller.getVisualPixelSize('left'), 120);
+    });
+  });
 }

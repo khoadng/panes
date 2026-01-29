@@ -278,10 +278,20 @@ class PaneController extends ChangeNotifier {
         _autoHideStates[id] = newState;
         _visibilityOverrides[id] = false;
 
-      case AutoHideResultReveal(:final newState, :final revealSize):
+      case AutoHideResultReveal(
+          :final newState,
+          :final revealSize,
+          :final requestedSize
+        ):
         _autoHideStates[id] = newState;
         _visibilityOverrides[id] = true;
         _pixelSizes[id] = revealSize;
+
+        // If reveal was clamped to minSize, track undershoot so the divider
+        // stays aligned with the mouse until virtual position catches up
+        if (requestedSize < revealSize) {
+          _minUndershootPositions[id] = requestedSize;
+        }
 
       case AutoHideResultNoChange(:final newState):
         _autoHideStates[id] = newState;

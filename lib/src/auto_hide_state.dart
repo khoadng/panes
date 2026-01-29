@@ -117,10 +117,19 @@ class AutoHideResultHide extends AutoHideResult {
 /// Pane should be revealed (was hidden, now showing).
 class AutoHideResultReveal extends AutoHideResult {
   final AutoHideState newState;
+
+  /// The size to reveal at (may be clamped to minSize).
   final double revealSize;
 
-  const AutoHideResultReveal(
-      {required this.newState, required this.revealSize});
+  /// The original requested size before clamping.
+  /// If less than revealSize, indicates undershoot that needs tracking.
+  final double requestedSize;
+
+  const AutoHideResultReveal({
+    required this.newState,
+    required this.revealSize,
+    required this.requestedSize,
+  });
 }
 
 /// No change needed (e.g., still tracking virtual position).
@@ -197,6 +206,7 @@ class AutoHideBehavior {
       return AutoHideResultReveal(
         newState: AutoHideVisible(pixelSize: revealSize),
         revealSize: revealSize,
+        requestedSize: requestedSize,
       );
     }
 
