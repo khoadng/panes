@@ -17,46 +17,54 @@ class _CascadeDemoState extends State<CascadeDemo> {
   late PaneController _horizontalController;
   late PaneController _verticalController;
 
+  // Track dynamic entries for horizontal panes
+  late List<PaneEntry> _horizontalEntries;
+  int _editorCount = 2;
+
   @override
   void initState() {
     super.initState();
+    _initEntries();
     _buildControllers();
   }
 
+  void _initEntries() {
+    _horizontalEntries = [
+      // File Explorer - eager, will cascade
+      PaneEntry(
+        id: 'explorer',
+        initialSize: PaneSize.pixel(200),
+        minSize: PaneSize.pixel(150),
+        maxSize: PaneSize.pixel(350),
+        resizeBehavior: ResizeBehavior.eager,
+      ),
+      // Editor 1 - eager (default for fraction), absorbs cascade
+      PaneEntry(
+        id: 'editor1',
+        initialSize: PaneSize.fraction(1.0),
+        minSize: PaneSize.pixel(150),
+      ),
+      // Editor 2 - eager, absorbs cascade
+      PaneEntry(
+        id: 'editor2',
+        initialSize: PaneSize.fraction(1.0),
+        minSize: PaneSize.pixel(150),
+      ),
+      // Outline Panel - FIXED, won't participate in cascade
+      PaneEntry(
+        id: 'outline',
+        initialSize: PaneSize.pixel(180),
+        minSize: PaneSize.pixel(120),
+        maxSize: PaneSize.pixel(300),
+        resizeBehavior: ResizeBehavior.fixed,
+      ),
+    ];
+    _editorCount = 2;
+  }
+
   void _buildControllers() {
-    // Horizontal: Explorer | Editor1 | Editor2 | Outline
-    _horizontalController = PaneController(
-      entries: [
-        // File Explorer - eager, will cascade
-        PaneEntry(
-          id: 'explorer',
-          initialSize: PaneSize.pixel(200),
-          minSize: PaneSize.pixel(150),
-          maxSize: PaneSize.pixel(350),
-          resizeBehavior: ResizeBehavior.eager,
-        ),
-        // Editor 1 - eager (default for fraction), absorbs cascade
-        PaneEntry(
-          id: 'editor1',
-          initialSize: PaneSize.fraction(1.0),
-          minSize: PaneSize.pixel(200),
-        ),
-        // Editor 2 - eager, absorbs cascade
-        PaneEntry(
-          id: 'editor2',
-          initialSize: PaneSize.fraction(1.0),
-          minSize: PaneSize.pixel(200),
-        ),
-        // Outline Panel - FIXED, won't participate in cascade
-        PaneEntry(
-          id: 'outline',
-          initialSize: PaneSize.pixel(180),
-          minSize: PaneSize.pixel(120),
-          maxSize: PaneSize.pixel(300),
-          resizeBehavior: ResizeBehavior.fixed,
-        ),
-      ],
-    );
+    // Horizontal: Explorer | Editors... | Outline
+    _horizontalController = PaneController(entries: _horizontalEntries);
 
     // Vertical: Main Area / Terminal
     _verticalController = PaneController(
@@ -79,6 +87,39 @@ class _CascadeDemoState extends State<CascadeDemo> {
     );
   }
 
+  void _addEditor() {
+    setState(() {
+      _editorCount++;
+      final newEditor = PaneEntry(
+        id: 'editor$_editorCount',
+        initialSize: PaneSize.fraction(1.0),
+        minSize: PaneSize.pixel(150),
+      );
+      // Insert before outline (last item)
+      _horizontalEntries.insert(_horizontalEntries.length - 1, newEditor);
+      _horizontalController.dispose();
+      _horizontalController = PaneController(entries: _horizontalEntries);
+    });
+  }
+
+  void _removeLastEditor() {
+    // Keep at least one editor
+    final editorCount = _horizontalEntries
+        .where((e) => e.id.startsWith('editor'))
+        .length;
+    if (editorCount <= 1) return;
+
+    setState(() {
+      // Find and remove the last editor (before outline)
+      final lastEditorIndex = _horizontalEntries.length - 2;
+      if (_horizontalEntries[lastEditorIndex].id.startsWith('editor')) {
+        _horizontalEntries.removeAt(lastEditorIndex);
+        _horizontalController.dispose();
+        _horizontalController = PaneController(entries: _horizontalEntries);
+      }
+    });
+  }
+
   @override
   void dispose() {
     _horizontalController.dispose();
@@ -90,6 +131,7 @@ class _CascadeDemoState extends State<CascadeDemo> {
     setState(() {
       _horizontalController.dispose();
       _verticalController.dispose();
+      _initEntries();
       _buildControllers();
     });
   }
@@ -307,10 +349,12 @@ class _CascadeDemoState extends State<CascadeDemo> {
   }
 
   String _getPaneName(String id) {
+    if (id.startsWith('editor')) {
+      final num = id.replaceFirst('editor', '');
+      return 'Editor $num';
+    }
     return switch (id) {
       'explorer' => 'Explorer',
-      'editor1' => 'Editor 1',
-      'editor2' => 'Editor 2',
       'outline' => 'Outline',
       'terminal' => 'Terminal',
       'main' => 'Main',
@@ -319,10 +363,12 @@ class _CascadeDemoState extends State<CascadeDemo> {
   }
 
   Widget _buildHorizontalPane(String id) {
+    if (id.startsWith('editor')) {
+      final num = int.tryParse(id.replaceFirst('editor', '')) ?? 0;
+      return _buildEditorPanel(num);
+    }
     return switch (id) {
       'explorer' => _buildExplorerPanel(),
-      'editor1' => _buildEditorPanel(1),
-      'editor2' => _buildEditorPanel(2),
       'outline' => _buildOutlinePanel(),
       _ => const SizedBox(),
     };
@@ -353,12 +399,16 @@ class _CascadeDemoState extends State<CascadeDemo> {
 
   Widget _buildEditorPanel(int index) {
     final id = 'editor$index';
-    final entry = _horizontalController.entries.firstWhere((e) => e.id == id);
+    final entry = _horizontalController.entries
+        .where((e) => e.id == id)
+        .firstOrNull;
+    if (entry == null) return const SizedBox();
+
     return _panelContainer(
       color: Colors.green,
       header: 'EDITOR $index',
       behavior: entry.effectiveResizeBehavior,
-      constraints: 'min: 200 • flex',
+      constraints: 'min: 150 • flex',
       child: Container(
         color: const Color(0xFF1e1e1e),
         padding: const EdgeInsets.all(12),
@@ -433,6 +483,9 @@ class _CascadeDemoState extends State<CascadeDemo> {
   Widget _buildTerminalPanel() {
     final entry =
         _verticalController.entries.firstWhere((e) => e.id == 'terminal');
+    final editorCount =
+        _horizontalEntries.where((e) => e.id.startsWith('editor')).length;
+
     return _panelContainer(
       color: Colors.green,
       header: 'TERMINAL',
@@ -444,6 +497,40 @@ class _CascadeDemoState extends State<CascadeDemo> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Dynamic panel controls
+            Row(
+              children: [
+                Text(
+                  '\$ ',
+                  style: TextStyle(
+                    color: Colors.green[300],
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                _terminalButton(
+                  icon: Icons.add,
+                  label: 'Add Editor',
+                  onPressed: _addEditor,
+                ),
+                const SizedBox(width: 8),
+                _terminalButton(
+                  icon: Icons.remove,
+                  label: 'Remove Editor',
+                  onPressed: editorCount > 1 ? _removeLastEditor : null,
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  '($editorCount editors)',
+                  style: TextStyle(
+                    color: Colors.grey[500],
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Text(
               '\$ flutter run',
               style: TextStyle(
@@ -470,18 +557,28 @@ class _CascadeDemoState extends State<CascadeDemo> {
                 fontFamily: 'monospace',
               ),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Syncing files to device macOS...',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 12,
-                fontFamily: 'monospace',
-              ),
-            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _terminalButton({
+    required IconData icon,
+    required String label,
+    VoidCallback? onPressed,
+  }) {
+    return TextButton.icon(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.cyan[300],
+        disabledForegroundColor: Colors.grey[700],
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(icon, size: 14),
+      label: Text(label, style: const TextStyle(fontSize: 11)),
     );
   }
 
